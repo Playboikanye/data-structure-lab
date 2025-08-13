@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdio.h>
 
 #define MAX 10
 
@@ -45,7 +44,7 @@ void display() {
         for (int i = front; i <= rear; i++) {
             printf("%d ", queue[i]);
         }
-        printf("\n");
+       printf("\n");
     }
 }
 
@@ -85,6 +84,7 @@ int main() {
             case 5:
                 printf("Exiting program.\n");
                 n=0;
+                break;
             default:
                 printf("Invalid function\n");
                 break;
