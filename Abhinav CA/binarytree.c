@@ -1,66 +1,129 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
+
+#define MAX 100
+
+char opStack[MAX];
+int topOp = -1;
 
 typedef struct Node {
     char data;
-    struct Node* left;
-    struct Node* right;
+    struct Node *left, *right;
 } Node;
 
-int index = 0;
+Node *nodeStack[MAX];
+int topNode = -1;
 
-Node* createNode(char data) {
-    Node* node = (Node*)malloc(sizeof(Node));
-    if (!node) {
-        printf("Memory allocation failed\n");
-        exit(1);
-    }
+void pushOp(char c) {
+    opStack[++topOp] = c;
+}
+
+char popOp() {
+    return opStack[topOp--];
+}
+
+char peekOp() {
+    return opStack[topOp];
+}
+
+int isEmptyOp() {
+    return topOp == -1;
+}
+
+void pushNode(Node *node) {
+    nodeStack[++topNode] = node;
+}
+
+Node *popNode() {
+    return nodeStack[topNode--];
+}
+
+Node* newNode(char data) {
+    Node *node = (Node*) malloc(sizeof(Node));
     node->data = data;
     node->left = node->right = NULL;
     return node;
 }
 
-Node* buildTreeFromPrefix(char* prefix) {
-    // Skip spaces
-    while (prefix[index] == ' ') index++;
-
-    // End of string
-    if (prefix[index] == '\0' || prefix[index] == '\n') return NULL;
-
-    char token = prefix[index++];
-    Node* node = createNode(token);
-
-    // If operator, build left and right subtrees
-    if (token == '+' || token == '-' || token == '*' || token == '/') {
-        node->left = buildTreeFromPrefix(prefix);
-        node->right = buildTreeFromPrefix(prefix);
-    }
-
-    return node;
+int precedence(char c) {
+    if (c == '+' || c == '-') return 1;
+    if (c == '*' || c == '/') return 2;
+    if (c == '^') return 3;
+    return 0;
 }
 
-void printPostfix(Node* root) {
-    if (!root) return;
-    printPostfix(root->left);
-    printPostfix(root->right);
-    printf("%c ", root->data);
+void infixToPostfix(char infix[], char postfix[]) {
+    int i, k = 0;
+    char c;
+    for (i = 0; (c = infix[i]) != '\0'; i++) {
+        if (isalnum(c)) {
+            postfix[k++] = c;
+        } else if (c == '(') {
+            pushOp(c);
+        } else if (c == ')') {
+            while (!isEmptyOp() && peekOp() != '(')
+                postfix[k++] = popOp();
+            popOp(); // remove '('
+        } else {
+            while (!isEmptyOp() && precedence(peekOp()) >= precedence(c))
+                postfix[k++] = popOp();
+            pushOp(c);
+        }
+    }
+    while (!isEmptyOp())
+        postfix[k++] = popOp();
+    postfix[k] = '\0';
+}
+
+Node* buildTree(char postfix[]) {
+    for (int i = 0; postfix[i] != '\0'; i++) {
+        char c = postfix[i];
+        Node *node = newNode(c);
+        if (isalnum(c)) {
+            pushNode(node);
+        } else {
+            node->right = popNode();
+            node->left = popNode();
+            pushNode(node);
+        }
+    }
+    return popNode();
+}
+
+void preorder(Node *root) {
+    if (root) {
+        printf("%c ", root->data);
+        preorder(root->left);
+        preorder(root->right);
+    }
+}
+
+void postorder(Node *root) {
+    if (root) {
+        postorder(root->left);
+        postorder(root->right);
+        printf("%c ", root->data);
+    }
 }
 
 int main() {
-    char prefixExpr[100];
+    char infix[MAX], postfix[MAX];
 
-    printf("Enter prefix expression:\n");
-    if (!fgets(prefixExpr, sizeof(prefixExpr), stdin)) {
-        printf("Input error\n");
-        return 1;
-    }
+    printf("Enter infix expression: ");
+    scanf("%s", infix);
 
-    index = 0;
-    Node* root = buildTreeFromPrefix(prefixExpr);
+    infixToPostfix(infix, postfix);
+    
 
-    printf("Postfix expression: ");
-    printPostfix(root);
+    Node *root = buildTree(postfix);
+    printf("Binary expression tree created successfully.\n");
+
+    printf("\nPrefix expression : ");
+    preorder(root);
+    printf("\nPostfix expression: ");
+    postorder(root);
     printf("\n");
 
     return 0;
