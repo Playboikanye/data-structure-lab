@@ -1,159 +1,184 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
-struct Block {
-    int size, free;
-    struct Block *prev, *next;
-};
+typedef struct Block {
+    int size;
+    bool is_free;
+    bool marked;
+    struct Block* prev;
+    struct Block* next;
+} Block;
 
-struct Block *head = NULL;
+Block* head = NULL;
 
-void create(int n[], int m) {
-    struct Block *t, *p = NULL;
-    for (int i = 0; i < m; i++) {
-        t = malloc(sizeof(struct Block));
-        t->size = n[i];
-        t->free = 1;
-        t->next = NULL;
-        t->prev = p;
-        if (p) p->next = t;
-        else head = t;
-        p = t;
+void create_block(int size) {
+    Block* new_block = (Block*)malloc(sizeof(Block));
+    new_block->size = size;
+    new_block->is_free = true;
+    new_block->marked = false;
+    new_block->prev = NULL;
+    new_block->next = NULL;
+
+    if (head == NULL) {
+        head = new_block;
+    } else {
+        Block* temp = head;
+        while (temp->next != NULL)
+            temp = temp->next;
+        temp->next = new_block;
+        new_block->prev = temp;
     }
 }
 
-void alloc(int s) {
-    struct Block *t = head;
-    while (t) {
-        if (t->free && t->size >= s) {
-            t->free = 0;
-            printf("Allocated process %d in block %d\n", s, t->size);
+void allocate_memory(int size) {
+    Block* temp = head;
+
+    while (temp != NULL) {
+        if (temp->is_free && temp->size >= size) {
+            if (temp->size > size) {
+                Block* new_block = (Block*)malloc(sizeof(Block));
+                new_block->size = temp->size - size;
+                new_block->is_free = true;
+                new_block->marked = false;
+
+                new_block->next = temp->next;
+                if (new_block->next != NULL)
+                    new_block->next->prev = new_block;
+
+                new_block->prev = temp;
+                temp->next = new_block;
+
+                temp->size = size;
+            }
+
+            temp->is_free = false;
+            printf("Allocated %d bytes.\n", size);
             return;
         }
-        t = t->next;
+        temp = temp->next;
     }
-    printf("No block found for %d\n", s);
+
+    printf("No suitable block found for %d bytes.\n", size);
 }
 
-void freeBlock(int pos) {
-    struct Block *t = head;
-    for (int i = 1; t && i < pos; i++)
-        t = t->next;
-    if (t && !t->free) {
-        t->free = 1;
-        printf("Freed block %d\n", pos);
-    } else
-        printf("Invalid block %d\n", pos);
-}
-
-void gc() {
-    struct Block *t = head;
-    while (t && t->next) {
-        if (t->free && t->next->free) {
-            t->size += t->next->size;
-            struct Block *tmp = t->next;
-            t->next = tmp->next;
-            if (tmp->next) tmp->next->prev = t;
-            free(tmp);
-        } else
-            t = t->next;
-    }
-}
-
-// New compaction function
-void compact() {
-    struct Block *t = head, *newHead = NULL, *lastUsed = NULL;
-    int totalFreeSize = 0;
-
-    // Build new list with only used blocks
-    while (t) {
-        if (!t->free) {
-            struct Block *newBlock = malloc(sizeof(struct Block));
-            newBlock->size = t->size;
-            newBlock->free = 0;
-            newBlock->prev = lastUsed;
-            newBlock->next = NULL;
-            if (lastUsed) lastUsed->next = newBlock;
-            else newHead = newBlock;
-            lastUsed = newBlock;
+void display_memory() {
+    Block* temp = head;
+    int index = 1;
+    printf("\nMemory Blocks:\n");
+    printf("------------------------------\n");
+    while (temp != NULL) {
+        if (temp->is_free) {
+            printf("Size: %4d | Free\n", temp->size);
         } else {
-            totalFreeSize += t->size;
+            printf("Size: %4d | Used (Block #%d) Marked: %d\n", temp->size, index, temp->marked);
+            index++;
         }
-        t = t->next;
+        temp = temp->next;
     }
-
-    // Add one big free block if there is free space
-    if (totalFreeSize > 0) {
-        struct Block *freeBlock = malloc(sizeof(struct Block));
-        freeBlock->size = totalFreeSize;
-        freeBlock->free = 1;
-        freeBlock->prev = lastUsed;
-        freeBlock->next = NULL;
-        if (lastUsed) lastUsed->next = freeBlock;
-        else newHead = freeBlock;  // all blocks free scenario
-    }
-
-    // Free old list
-    t = head;
-    while (t) {
-        struct Block *tmp = t;
-        t = t->next;
-        free(tmp);
-    }
-
-    head = newHead;
+    printf("------------------------------\n");
 }
 
-void display() {
-    struct Block *t = head;
-    int i = 1;
-    printf("\nBlock\tSize\tStatus\n");
-    while (t) {
-        printf("%d\t%d\t%s\n", i++, t->size, t->free ? "Free" : "Used");
-        t = t->next;
+void mark(Block* b) {
+    if (b == NULL || b->marked || b->is_free) return;
+    b->marked = true;
+}
+
+void sweep() {
+    Block* temp = head;
+    while (temp != NULL) {
+        if (!temp->is_free && !temp->marked) {
+            printf("Garbage Collector: Freeing block of size %d bytes\n", temp->size);
+            temp->is_free = true;
+        }
+        temp->marked = false;
+        temp = temp->next;
     }
+}
+
+void coalesce() {
+    Block* temp = head;
+    while (temp != NULL && temp->next != NULL) {
+        if (temp->is_free && temp->next->is_free) {
+            Block* next = temp->next;
+            temp->size += next->size;
+
+            temp->next = next->next;
+            if (next->next != NULL)
+                next->next->prev = temp;
+
+            free(next);
+        } else {
+            temp = temp->next;
+        }
+    }
+}
+
+void gc(int roots[], int root_count) {
+    Block* temp;
+    int index;
+
+    for (int i = 0; i < root_count; i++) {
+        index = 0;
+        temp = head;
+        while (temp != NULL) {
+            if (!temp->is_free) {
+                if (++index == roots[i]) {
+                    mark(temp);
+                    break;
+                }
+            }
+            temp = temp->next;
+        }
+    }
+
+    sweep();
+    coalesce();
 }
 
 int main() {
-    int nb, np;
-    printf("Enter number of memory blocks: ");
-    scanf("%d", &nb);
-    int b[nb];
-    printf("Enter sizes of each block:\n");
-    for (int i = 0; i < nb; i++)
-        scanf("%d", &b[i]);
-    create(b, nb);
+    int choice, size, n, i;
 
-    printf("Enter number of processes: ");
-    scanf("%d", &np);
-    int p[np];
-    printf("Enter sizes of each process:\n");
-    for (int i = 0; i < np; i++) {
-        scanf("%d", &p[i]);
-        alloc(p[i]);
-    }
-
-    display();
-
-    int n;
-    printf("\nEnter number of blocks to free: ");
+    printf("Enter number of initial memory blocks: ");
     scanf("%d", &n);
-    printf("Enter block numbers to free:\n");
-    for (int i = 0; i < n; i++) {
-        int pos;
-        scanf("%d", &pos);
-        freeBlock(pos);
+
+    for (i = 0; i < n; i++) {
+        printf("Enter size of block %d: ", i + 1);
+        scanf("%d", &size);
+        create_block(size);
     }
 
-    printf("\nBefore GC:");
-    display();
-    gc();
-    printf("\nAfter GC:");
-    display();
+    int roots[100];
+    int root_count = 0;
 
-    printf("\nAfter Compaction:");
-    compact();
-    display();
+    printf("\n1. Allocate\n2. Display\n3. Add Root\n4. Run Garbage Collector\n5. Exit\n");
+
+    while (1) {
+        printf("\nEnter choice: ");
+        scanf("%d", &choice);
+
+        if (choice == 1) {
+            printf("Enter size to allocate: ");
+            scanf("%d", &size);
+            allocate_memory(size);
+        } else if (choice == 2) {
+            display_memory();
+        } else if (choice == 3) {
+            printf("Enter block number to add as root (allocated block index): ");
+            int r;
+            scanf("%d", &r);
+            roots[root_count++] = r;
+            printf("Root added: block #%d\n", r);
+        } else if (choice == 4) {
+            printf("Running Garbage Collector...\n");
+            gc(roots, root_count);
+        } else if (choice == 5) {
+            printf("Exiting...\n");
+            break;
+        } else {
+            printf("Invalid choice.\n");
+        }
+    }
 
     return 0;
 }
